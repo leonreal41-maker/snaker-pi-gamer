@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Snake em Python (Brython)</title>
+  <style>
+    :root { --bg: #0f172a; --panel:#111827; --accent:#22c55e; --danger:#ef4444; --text:#e5e7eb; }
+    *{box-sizing:border-box}
+    body{
+      margin:0; background:linear-gradient(180deg,#0b1020,#0f172a 30%,#0b1020);
+      color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,'Helvetica Neue',Arial,'Apple Color Emoji','Segoe UI Emoji';
+      display:flex; align-items:center; justify-content:center; min-height:100vh; padding:24px;
+    }
+    .wrap{ width: min(900px, 100%); display:grid; gap:16px; grid-template-columns:1fr; }
+    header{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+    h1{font-size:clamp(20px, 2.8vw, 32px); margin:0; line-height:1.1;}
+    .panel{background:var(--panel); border:1px solid #1f2937; border-radius:18px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.35);}
+    .row{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;}
+    canvas{ background:#0b1220; border-radius:14px; width:100%; height:auto; aspect-ratio: 1 / 1; image-rendering: pixelated; }
+    .stats{display:flex; gap:18px; align-items:center; flex-wrap:wrap;}
+    .badge{padding:6px 10px; border-radius:999px; background:#0a0f1d; border:1px solid #1f2937; font-weight:600;}
+    .controls{display:grid; grid-template-columns:repeat(3,60px); gap:10px; justify-content:center; margin-top:10px;}
+    .btn{
+      background:#0a0f1d; border:1px solid #23304a; color:var(--text); padding:10px 14px;
+      border-radius:12px; font-weight:700; cursor:pointer; user-select:none;
+      transition:.15s transform ease, .15s background ease;
+      text-align:center;
+    }
+    .btn:hover{ transform: translateY(-1px); background:#0f1930; }
+    .btn:active{ transform: translateY(0); }
+    .btn--accent{ border-color:#264d36; background:#0c1912; }
+    .grid-span-3{grid-column:1 / span 3;}
+    footer{opacity:.75; font-size:12px; text-align:center;}
+    .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#0a0f1d; border:1px solid #1f2937; padding:2px 6px; border-radius:6px;}
+  </style>
+  <!-- Brython (Python no navegador) -->
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.13.1/brython.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.13.1/brython_stdlib.js"></script>
+</head>
+<body onload="brython()">
+  <div class="wrap">
+    <header class="row">
+      <h1>🐍 Snake em Python (Brython)</h1>
+      <div class="stats">
+        <div class="badge">Pontos: <span id="score">0</span></div>
+        <div class="badge">Velocidade: <span id="speed">120</span> ms</div>
+      </div>
+    </header>
+
+    <div class="panel">
+      <canvas id="game" width="480" height="480" aria-label="Tabuleiro do jogo"></canvas>
+      <div class="controls">
+        <div></div>
+        <button class="btn" id="up">▲</button>
+        <div></div>
+        <button class="btn" id="left">◀</button>
+        <button class="btn btn--accent" id="pause">⏯ Pausar</button>
+        <button class="btn" id="right">▶</button>
+        <div></div>
+        <button class="btn" id="down">▼</button>
+        <button class="btn grid-span-3" id="reset">🔁 Reiniciar</button>
+      </div>
+    </div>
+
+    <footer>Use as setas do teclado ou <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span>. Espaço ou Enter para pausar.</footer>
+  </div>
+
+  <script type="text/python">
+from browser import document, timer
+import random
+
+# ---------- Configurações ----------
+canvas = document["game"]
+ctx = canvas.getContext("2d")
+GRID = 20  # tamanho do quadrado em px
+COLS = canvas.width // GRID
+ROWS = canvas.height // GRID
+
+snake = [(5, 5)]
+direction = (1, 0)
+pending_dir = direction
+food = (10, 10)
+score = 0
+speed = 120  # ms por frame
+running = True
+paused = False
+loop_id = None
+
+# ---------- Utilidades ----------
+def place_food():
+    global food
+    free_cells = [(x, y) for x in range(COLS) for y in range(ROWS) if (x, y) not in snake]
+    if not free_cells:
+        # vitória técnica: preencheu tudo
+        stop_game(win=True)
+        return
+    food = random.choice(free_cells)
+
+def draw_cell(x, y, color):
+    ctx.fillStyle = color
+    # -1 px para criar "linhas" entre as células, visual retrô
+    ctx.fillRect(x * GRID, y * GRID, GRID - 1, GRID - 1)
+
+def draw():
+    # fundo
+    ctx.fillStyle = "#0b1220"
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    # cobra
+    for i, (x, y) in enumerate(snake):
+        draw_cell(x, y, "#22c55e" if i else "#4ade80")
+
+    # comida
+    fx, fy = food
+    draw_cell(fx, fy, "#ef4444")
+
+    # overlays
+    document["score"].text = str(score)
+    document["speed"].text = str(speed)
+
+    if not running:
+        ctx.fillStyle = "rgba(0,0,0,0.55)"
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = "#e5e7eb"
+        ctx.font = "bold 32px system-ui, sans-serif"
+        ctx.textAlign = "center"
+        ctx.fillText("Fim de jogo! Pressione Reiniciar", canvas.width/2, canvas.height/2)
+    elif paused:
+        ctx.fillStyle = "rgba(0,0,0,0.4)"
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = "#e5e7eb"
+        ctx.font = "bold 24px system-ui, sans-serif"
+        ctx.textAlign = "center"
+        ctx.fillText("Pausado", canvas.width/2, canvas.height/2)
+
+def stop_game(win=False):
+    global running
+    running = False
+    draw()
+
+def set_dir(dx, dy):
+    global pending_dir
+    if not running:
+        return
+    # evita inversão direta (colisão instantânea)
+    if (dx, dy) != (-direction[0], -direction[1]):
+        pending_dir = (dx, dy)
+
+def toggle_pause(ev=None):
+    global paused
+    if not running:
+        return
+    paused = not paused
+    draw()
+
+def reset(ev=None):
+    global snake, direction, pending_dir, food, score, speed, running, paused
+    snake = [(5, 5)]
+    direction = (1, 0)
+    pending_dir = direction
+    score = 0
+    speed = 120
+    running = True
+    paused = False
+    place_food()
+    draw()
+    restart_loop()
+
+def step():
+    global direction, pending_dir, snake, score, running
+    if not running or paused:
+        draw()
+        return
+
+    # aplica a direção pendente se não for inversa
+    if (pending_dir[0] != -direction[0]) or (pending_dir[1] != -direction[1]):
+        direction = pending_dir
+
+    hx, hy = snake[0]
+    nx = (hx + direction[0]) % COLS
+    ny = (hy + direction[1]) % ROWS
+    head = (nx, ny)
+
+    # colisão com o próprio corpo
+    if head in snake:
+        stop_game()
+        return
+
+    snake.insert(0, head)
+
+    if head == food:
+        score += 1
+        # acelera a cada 5 pontos, limite mínimo ~60ms
+        if score % 5 == 0:
+            adjust_speed(max(60, speed - 5))
+        place_food()
+    else:
+        snake.pop()
+
+    draw()
+
+def adjust_speed(new_speed):
+    global speed
+    if new_speed == speed:
+        return
+    speed = new_speed
+    restart_loop()
+
+def on_key(ev):
+    key = ev.key
+    if key in ("ArrowUp", "w", "W"):
+        set_dir(0, -1)
+    elif key in ("ArrowDown", "s", "S"):
+        set_dir(0, 1)
+    elif key in ("ArrowLeft", "a", "A"):
+        set_dir(-1, 0)
+    elif key in ("ArrowRight", "d", "D"):
+        set_dir(1, 0)
+    elif key in (" ", "Enter"):
+        toggle_pause()
+
+document.bind("keydown", on_key)
+
+# Botões de toque / mouse
+document["up"].bind("click", lambda ev: set_dir(0, -1))
+document["down"].bind("click", lambda ev: set_dir(0, 1))
+document["left"].bind("click", lambda ev: set_dir(-1, 0))
+document["right"].bind("click", lambda ev: set_dir(1, 0))
+document["pause"].bind("click", toggle_pause)
+document["reset"].bind("click", reset)
+
+def restart_loop():
+    global loop_id
+    if loop_id is not None:
+        timer.clear_interval(loop_id)
+    loop_id = timer.set_interval(step, speed)
+
+# Inicialização
+place_food()
+draw()
+restart_loop()
+  </script>
+</body>
+</html>
