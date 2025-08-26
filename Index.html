@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guerra da Galinha</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #fafafa;
+    }
+    #game {
+      margin-top: 20px;
+      border: 2px solid #333;
+      display: inline-block;
+      background: white;
+      padding: 20px;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #pay { display: none; }
+  </style>
+</head>
+<body>
+  <h1>🐔 Guerra da Galinha 🐔</h1>
+
+  <!-- Área do jogo -->
+  <div id="game">
+    <p>Aqui vai o seu jogo da galinha 🐔💥</p>
+    <!-- Exemplo: botão para atirar -->
+    <button onclick="alert('POW 💥🐔')">Atirar</button>
+  </div>
+
+  <!-- Botões de login e pagamento -->
+  <div id="controls">
+    <button id="login">Login com Pi</button>
+    <button id="pay">Comprar Vida Extra (1 Pi Testnet)</button>
+  </div>
+
+  <!-- SDK da Pi -->
+  <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+  <script>
+    // Inicializa SDK Pi
+    Pi.init({ version: "2.0" });
+
+    // LOGIN
+    document.getElementById("login").addEventListener("click", async () => {
+      try {
+        const scopes = ['username', 'payments'];
+        const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
+
+        console.log("Usuário logado:", auth);
+        alert("Bem-vindo " + auth.user.username + "!");
+
+        // Depois do login, habilita compras no jogo
+        document.getElementById("pay").style.display = "inline-block";
+        document.getElementById("login").style.display = "none";
+
+      } catch (err) {
+        console.error(err);
+        alert("Erro no login: " + err);
+      }
+    });
+
+    // Caso exista pagamento pendente
+    function onIncompletePaymentFound(payment) {
+      console.log("Pagamento pendente encontrado:", payment);
+    }
+
+    // PAGAMENTO DE VIDA EXTRA
+    document.getElementById("pay").addEventListener("click", async () => {
+      try {
+        const paymentData = {
+          amount: 1, // valor fictício no sandbox
+          memo: "Compra de Vida Extra",
+          metadata: { item: "vida_extra" },
+        };
+
+        const payment = await Pi.createPayment(paymentData, {
+          onReadyForServerApproval: (paymentId) => {
+            console.log("Pronto para aprovação:", paymentId);
+          },
+          onReadyForServerCompletion: (paymentId, txid) => {
+            console.log("Pronto para completar:", paymentId, txid);
+
+            // Dá a vida extra para o jogador
+            alert("✅ Vida extra adicionada ao jogo!");
+          },
+          onCancel: (paymentId) => {
+            console.log("Pagamento cancelado:", paymentId);
+            alert("Pagamento cancelado.");
+          },
+          onError: (err, payment) => {
+            console.error("Erro no pagamento:", err, payment);
+            alert("Erro no pagamento!");
+          },
+        });
+
+        console.log("Pagamento criado:", payment);
+
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao criar pagamento: " + err);
+      }
+    });
+  </script>
+</body>
+</html>
